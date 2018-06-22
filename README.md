@@ -1,10 +1,6 @@
 Run you bazel tests using `arc unit` command (also get your BUILD filers formatted using `arc lint`). Here is how:
 
-1. Copy content of this repository into your project. Let's say you have `/path/to/.arcconfig`, then:
-```
-cd /path/to/
-git archive --format=tar --remote=https://github.com/igorgatis/bazel-arcanist HEAD | tar xf -
-```
+1. Copy content of this repository into your project.
 2. Modify `.arcconfig` to make it look like this:
 ```
 {

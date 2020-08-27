@@ -19,10 +19,7 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
       $this->debug = true;
     }
     $this->debugPrint("run");
-    if (getenv("USE_BAZELRC")) {
-      $this->useConfig = true;
-      print("WARNING: using default bazelrc\n");
-    }
+    $this->useConfig = true;
     if (getenv("WAIT_FOR_BAZEL")) {
       $this->waitForBazel = true;
     }
@@ -117,8 +114,7 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     $future = new ExecFuture($this->bazelCommand("test", array_merge([
         "--verbose_failures",
         "--test_tag_filters=$tag_filters",
-        "--show_progress_rate_limit=1",
-        "--nocache_test_results",
+        "--show_progress_rate_limit=0.3",
         "--color=yes",
         "--curses=yes",
         "--symlink_prefix=/",
@@ -128,7 +124,7 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     $future->setCWD($this->project_root);
 
     do {
-      $done = $future->resolve(0.2);
+      $done = $future->resolve();
       list($stdout, $stderr) = $future->read();
       print($stderr);
       $future->discardBuffers();

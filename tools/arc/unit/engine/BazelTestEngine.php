@@ -19,7 +19,7 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     if (getenv("DEBUG")) {
       $this->debug = true;
     }
-    $this->debugPrint("run");
+    $this->debugPrint("run()");
     $this->useConfig = true;
     if (getenv("WAIT_FOR_BAZEL")) {
       $this->waitForBazel = true;
@@ -55,11 +55,13 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     $tag_filter = join("|", self::$omit_tags);
     $query = 'rdeps(//..., set('.$files.')) intersect tests(//...) except attr(tags, "'.$tag_filter.'", //...)';
 
+    print("Querying affected files...\n");
+    // Run once printing output...
+    $this->verboseWaitForExecFuture(new ExecFuture($cmd, $query));
+    // ... then run again (should be ast) capturing output.
     $future = new ExecFuture($cmd, $query);
     $this->debugPrint($future->getCommand());
     $future->setCWD($this->project_root);
-
-    print("Querying affected files...\n");
     $status = $future->resolve();
     if ($status[0] != 3 && $status[0] != 0) {
       throw new Exception("Bazel query error (".$status[0]."): ".$status[2]);
@@ -129,24 +131,15 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
         "--build_event_json_file=$events_file",
         ""],
         $targets)));
-    $this->debugPrint($future->getCommand());
     $future->setCWD($this->project_root);
 
-    $future->start();
-    do {
-      usleep(200*1000);
-      list($stdout, $stderr) = $future->read();
-      print($stderr);
-      $future->discardBuffers();
-    } while (!$future->isReady());
-
-    $status = $future->resolve();
+    $status = $this->verboseWaitForExecFuture($future);
     $code = $status[0];
     if ($code == 4) {
       print("No tests affected...\n");
       return [];
     } else if ($code == 1) {
-      throw new Exception($output . "\n" . $status[2]);
+      throw new Exception(trim($status[1]) . "\n" . $status[2]);
     }
 
     return $this->parseEventFile($targets, $events_file);
@@ -245,6 +238,18 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     $cmd = $cmd . $subcommand . " --tool_tag=arcanist ";
     $cmd = $cmd . join(" ", $args);
     return $cmd;
+  }
+
+  private function verboseWaitForExecFuture($future) {
+    $this->debugPrint($future->getCommand());
+    $future->start();
+    do {
+      usleep(200*1000);
+      list($stdout, $stderr) = $future->read();
+      print($stderr);
+      $future->discardBuffers();
+    } while (!$future->isReady());
+    return $future->resolve();
   }
 
   private function debugPrint($msg) {

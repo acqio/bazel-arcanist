@@ -2,7 +2,7 @@ Run you bazel tests using `arc unit` command (also get your BUILD filers formatt
 
 1. Copy content of this repository into your project:
 ```
-curl -sSL https://github.com/acqio/bazel-arcanist/archive/0.1.tar.gz | tar zxf - --strip-components=1 --wildcards bazel-arcanist-0.1/tools/*
+curl -sSL https://github.com/acqio/bazel-arcanist/archive/0.4.tar.gz | tar zxf - --strip-components=1 --wildcards bazel-arcanist-0.4/tools/*
 ```
 2. Modify `.arcconfig` to make it look like this:
 ```

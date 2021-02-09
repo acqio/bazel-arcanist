@@ -1,6 +1,7 @@
 <?php
 // Heavily inspired by:
 // https://github.com/google/kythe/blob/master/tools/arc/unit/engine/BazelTestEngine.php
+// With proper support for event file.
 final class BazelTestEngine extends ArcanistUnitTestEngine {
   private static $omit_tags = ["manual", "broken", "arc-ignore", "docker"];
   private $debug;
@@ -18,7 +19,7 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     if (getenv("DEBUG")) {
       $this->debug = true;
     }
-    $this->debugPrint("run");
+    $this->debugPrint("run()");
     $this->useConfig = true;
     if (getenv("WAIT_FOR_BAZEL")) {
       $this->waitForBazel = true;
@@ -49,13 +50,17 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     // Quote each file to make it safe in case it has special characters in it.
     $files = array_map(function($s) { return '"'.$s.'"'; }, $files);
     $files = join($files, " ");
-    $this->debugPrint("files: " . $files);
 
-    $cmd = $this->bazelCommand("query", ["%s"]);
+    $cmd = $this->bazelCommand("query", ["-k", "%s"]);
     $tag_filter = join("|", self::$omit_tags);
-    $query = 'rdeps(//..., set('.$files.')) except attr(tags, "'.$tag_filter.'", //...)';
-    $this->debugPrint($query);
+    $query = 'rdeps(//..., set('.$files.')) intersect tests(//...) except attr(tags, "'.$tag_filter.'", //...)';
+
+    print("Querying affected files...\n");
+    // Run once printing output...
+    $this->verboseWaitForExecFuture(new ExecFuture($cmd, $query));
+    // ... then run again (should be ast) capturing output.
     $future = new ExecFuture($cmd, $query);
+    $this->debugPrint($future->getCommand());
     $future->setCWD($this->project_root);
     $status = $future->resolve();
     if ($status[0] != 3 && $status[0] != 0) {
@@ -71,14 +76,19 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
   }
 
   private function getFileTargets() {
+    $this->debugPrint("getFileTargets()");
+
     if (empty($this->getPaths())) {
       return array();
     }
     $files = join(
       " ", array_map(array('BazelTestEngine', 'fileToTarget'), $this->getPaths()));
+
     $future = new ExecFuture($this->bazelCommand("query", ["-k", "%s"]), 'set('.$files.')');
+    $this->debugPrint($future->getCommand());
     $future->setCWD($this->project_root);
 
+    print("Discovering affected test targets...\n");
     $status = $future->resolve();
     if ($status[0] != 3 && $status[0] != 0) {
       throw new Exception("Bazel query error (".$status[0]."): ".$status[2]);
@@ -96,11 +106,11 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     if (dirname($file) == ".") {
       return '//:' . $file;
     }
-    return "'" . $file . "'";
+    return "\"" . $file . "\"";
   }
 
   private function runTests($targets) {
-    $this->debugPrint("runTests(" . join($targets, ", ") . ")");
+    $this->debugPrint("runTests()");
 
     if (!file_exists($this->testlogs_root)) {
       mkdir($this->testlogs_root, 0777, true);
@@ -123,12 +133,14 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
         $targets)));
     $future->setCWD($this->project_root);
 
-    do {
-      $done = $future->resolve();
-      list($stdout, $stderr) = $future->read();
-      print($stderr);
-      $future->discardBuffers();
-    } while ($done === null);
+    $status = $this->verboseWaitForExecFuture($future);
+    $code = $status[0];
+    if ($code == 4) {
+      print("No tests affected...\n");
+      return [];
+    } else if ($code == 1) {
+      throw new Exception(trim($status[1]) . "\n" . $status[2]);
+    }
 
     return $this->parseEventFile($targets, $events_file);
   }
@@ -207,7 +219,8 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
   }
 
   private function bazelInfo($name) {
-    $future = new ExecFuture($this->bazelCommand("info", [$name]));
+    $future = new ExecFuture($this->bazelCommand("info", ["--fetch", $name]));
+    $this->debugPrint($future->getCommand());
     $future->setCWD($this->project_root);
     $future->resolve();
     list($stdout) = $future->read();
@@ -224,8 +237,19 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     }
     $cmd = $cmd . $subcommand . " --tool_tag=arcanist ";
     $cmd = $cmd . join(" ", $args);
-    $this->debugPrint($cmd);
     return $cmd;
+  }
+
+  private function verboseWaitForExecFuture($future) {
+    $this->debugPrint($future->getCommand());
+    $future->start();
+    do {
+      usleep(200*1000);
+      list($stdout, $stderr) = $future->read();
+      print($stderr);
+      $future->discardBuffers();
+    } while (!$future->isReady());
+    return $future->resolve();
   }
 
   private function debugPrint($msg) {

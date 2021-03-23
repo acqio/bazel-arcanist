@@ -1,3 +1,3 @@
 #!/bin/bash -e
 
-buildifier < $1
+buildifier --path $1 < $1

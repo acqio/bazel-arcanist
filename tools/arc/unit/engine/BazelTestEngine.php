@@ -49,7 +49,7 @@ final class BazelTestEngine extends ArcanistUnitTestEngine {
     }
     // Quote each file to make it safe in case it has special characters in it.
     $files = array_map(function($s) { return '"'.$s.'"'; }, $files);
-    $files = join($files, " ");
+    $files = join(" ", $files);
 
     $cmd = $this->bazelCommand("query", ["-k", "%s"]);
     $tag_filter = join("|", self::$omit_tags);
